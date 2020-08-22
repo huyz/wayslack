@@ -48,6 +48,10 @@ Getting Started
         delete_old_files: 60 days
       - dir: second-export
         token: xoxp-9876-wxyz
+        # Do not download any files; only download conversation text.
+        download_files: false
+        # Only download private conversations and files
+        export_public_data: false
 
     $ wayslack
     Processing: first-export
