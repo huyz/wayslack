@@ -339,6 +339,10 @@ class Downloader(object):
     def join(self):
         self.pool.join()
 
+    @staticmethod
+    def _is_slack_site(url):
+        return "slack.com" in url or "slack-edge.com" in url or "slack-files.com" in url
+
     def _downloader(self, item):
         lockdir = None
         try:
@@ -355,9 +359,13 @@ class Downloader(object):
 
             meta_file = base + joiner + "meta-" + name + ".txt"
             try:
+                headers = {
+                }
+                if self._is_slack_site(url):
+                    headers["Authorization"] = "Bearer %s" %(self.token, )
                 res = requests.get(
                     url,
-                    headers={"Authorization": "Bearer %s" %(self.token, )},
+                    headers=headers,
                     stream=True,
                     timeout=60,
                 )
