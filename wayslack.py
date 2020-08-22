@@ -553,7 +553,7 @@ class ItemBase(object):
                     self.pretty_name, len(day_msgs), self.pretty_name, day_archive,
                 )
                 for msg in day_msgs:
-                    if "file" in msg or "attachments" in msg:
+                    if "file" in msg or "files" in msg or "attachments" in msg:
                         self.downloader.add_message(msg)
                 with open_atomic(str(day_archive)) as f:
                     json.dump(cur, f)
