@@ -1146,6 +1146,9 @@ class SlackArchive(object):
             self.mpims,
             self.ims,
         ]
+        if not opts.get("export_public_data", True):
+            self.subtypes.remove(self.files)
+            self.subtypes.remove(self.channels)
 
     def __enter__(self):
         self.downloader = Downloader(
@@ -1282,6 +1285,7 @@ archives:
     token: xoxp-9876-wxyz
     # Do not download any files; only download conversation text.
     download_files: false
+    export_public_data: false
 """
 
 parser = argparse.ArgumentParser(formatter_class=argparse.RawTextHelpFormatter, description="""
