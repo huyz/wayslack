@@ -359,7 +359,9 @@ class Downloader(object):
 
             meta_file = base + joiner + "meta-" + name + ".txt"
             try:
+                # Some sites hang and time out if there's no (real?) user-agent
                 headers = {
+                    "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/84.0.4147.125 Safari/537.36",
                 }
                 if self._is_slack_site(url):
                     headers["Authorization"] = "Bearer %s" %(self.token, )
