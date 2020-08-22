@@ -389,12 +389,18 @@ class Downloader(object):
                 for chunk in res.iter_content(4096):
                     hash.update(chunk)
                     f.write(chunk)
-                if hash.hexdigest() != res.headers["etag"].strip('"'):
-                    raise Exception("Downloading %r: checksum does not match. etag %r != md5 %r\n" %(
-                        url,
-                        res.headers["etag"],
-                        hash.hexdigest(),
-                    ))
+                # XXX Slack generally sends an MD5 checksum in the Etag, but they seem to
+                # occasionally version Etags which breaks the checksum somehow.
+                if self._is_slack_site(url):
+                    etag = res.headers.get("etag")
+                    if etag:
+                        etag = etag.strip('"')
+                    if etag and hash.hexdigest() != etag:
+                        print("WARNING: Downloading %r: checksum does not match. etag %r != md5 %r\n" %(
+                            url,
+                            etag,
+                            hash.hexdigest(),
+                        ))
             self.counter += 1
             print "Downloaded %s (%s left): %s" %(
                 self.counter,
