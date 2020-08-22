@@ -434,8 +434,7 @@ class Downloader(object):
         ]))
 
     def add_message(self, msg):
-        file_obj = msg.get("file")
-        if file_obj:
+        for file_obj in msg.get("files") or msg.get("file") or []:
             self.add_file(file_obj)
 
         for att in msg.get("attachments") or []:
@@ -473,7 +472,7 @@ class ItemBase(object):
     def download_all_files(self):
         for archive in self.iter_archives():
             for msg in self.load_messages(archive):
-                if "file" in msg or "attachments" in msg:
+                if "file" in msg or "files" in msg or "attachments" in msg:
                     self.downloader.add_message(msg)
 
     def iter_archives(self, reverse=False):
