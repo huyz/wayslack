@@ -283,8 +283,11 @@ def pluck(dict, keys):
 def sha256(s):
     return hashlib.sha256(s).hexdigest()
 
+def is_slack_url(url):
+    return ".slack.com/" in url or "slack-edge.com/" in url or "slack-files.com/" in url
+
 def url_to_filename(url, _t_re=re.compile("\?t=[^&]*$")):
-    if url.startswith("https://files.slack.com"):
+    if is_slack_url(url):
         url = _t_re.sub("", url)
     url = urllib.quote(url, safe="")
     if len(url) > 190:
@@ -384,10 +387,6 @@ class Downloader(object):
     def join(self):
         self.pool.join()
 
-    @staticmethod
-    def _is_slack_site(url):
-        return "slack.com" in url or "slack-edge.com" in url or "slack-files.com" in url
-
     def _downloader(self, item):
         lockdir = None
         try:
@@ -408,7 +407,7 @@ class Downloader(object):
                 headers = {
                     "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/84.0.4147.125 Safari/537.36",
                 }
-                if self._is_slack_site(url):
+                if is_slack_url(url):
                     headers["Authorization"] = "Bearer %s" %(self.token, )
                 res = requests.get(
                     url,
@@ -436,7 +435,7 @@ class Downloader(object):
                     f.write(chunk)
                 # XXX Slack generally sends an MD5 checksum in the Etag, but they seem to
                 #   occasionally version Etags which breaks the checksum somehow.
-                if self._is_slack_site(url):
+                if is_slack_url(url):
                     etag = res.headers.get("etag")
                     if etag:
                         etag = etag.strip('"')
