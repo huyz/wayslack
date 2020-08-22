@@ -671,6 +671,9 @@ class ArchiveChannels(BaseArchiver):
 class ArchiveGroups(BaseArchiver):
     name = "groups"
 
+class ArchiveMPIMs(BaseArchiver):
+    name = "mpims"
+
 
 class ArchiveIMs(BaseArchiver):
     name = "ims"
@@ -931,6 +934,7 @@ class SlackArchive(object):
         if not private_dir.exists():
             os.makedirs(str(private_dir))
         self.groups = ArchiveGroups(self, private_dir / "_groups")
+        self.mpims = ArchiveMPIMs(self, private_dir / "_mpims")
         self.ims = ArchiveIMs(self, private_dir / "_ims")
         self.subtypes = [
             self.emoji,
@@ -938,6 +942,7 @@ class SlackArchive(object):
             self.users,
             self.channels,
             self.groups,
+            self.mpims,
             self.ims,
         ]
 
