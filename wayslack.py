@@ -28,6 +28,16 @@ import requests
 from requests.exceptions import HTTPError, ReadTimeout, ConnectionError
 from slacker import Slacker, Error
 
+# Turn on all sorts of logging and pretty-prints the output json
+DEBUG = True
+
+if DEBUG:
+    JSON_INDENT = 4  # Default is None
+    import logging
+    logging.basicConfig(level=logging.DEBUG)
+else:
+    JSON_INDENT = None
+
 def ts2datetime(ts):
     return datetime.fromtimestamp(ts)
 
@@ -89,8 +99,9 @@ def slack_retry(method, *args, **kwargs):
             attempt += 1
 
 
-VERBOSE = False
+VERBOSE = DEBUG
 
+# Source: https://github.com/shazow/unstdlib.py/blob/master/unstdlib/standard/string_.py
 def to_str(obj, encoding='utf-8', **encode_args):
     r"""
     Returns a ``str`` of ``obj``, encoding using ``encoding`` if necessary. For
@@ -123,6 +134,7 @@ def to_str(obj, encoding='utf-8', **encode_args):
     return str(obj)
 
 
+# Source: https://github.com/shazow/unstdlib.py/blob/master/unstdlib/standard/contextlib_.py
 class open_atomic(object):
     """
     Opens a file for atomic writing by writing to a temporary file, then moving
@@ -296,6 +308,7 @@ class Threadpool(object):
             thread.join()
 
     def _run_thread(self, idx):
+        # To stop thread when the queue isn't empty?
         while not self._stop:
             try:
                 item = self._queue.get()
@@ -349,7 +362,7 @@ class Downloader(object):
                 return
 
             with open_atomic(str(self.pending_file)) as f:
-                json.dump(to_write, f)
+                json.dump(to_write, f, indent=JSON_INDENT)
 
     def join(self):
         self.pool.join()
@@ -405,7 +418,7 @@ class Downloader(object):
                     hash.update(chunk)
                     f.write(chunk)
                 # XXX Slack generally sends an MD5 checksum in the Etag, but they seem to
-                # occasionally version Etags which breaks the checksum somehow.
+                #   occasionally version Etags which breaks the checksum somehow.
                 if self._is_slack_site(url):
                     etag = res.headers.get("etag")
                     if etag:
@@ -556,7 +569,7 @@ class ItemBase(object):
                     if "file" in msg or "files" in msg or "attachments" in msg:
                         self.downloader.add_message(msg)
                 with open_atomic(str(day_archive)) as f:
-                    json.dump(cur, f)
+                    json.dump(cur, f, indent=JSON_INDENT)
                 if float(day_msgs[-1]["ts"]) > float(latest_ts):
                     latest_ts = day_msgs[-1]["ts"]
             if not resp.body["has_more"]:
@@ -771,12 +784,12 @@ class ArchiveFiles(object):
                     output_dir.mkdir()
                 output_file = output_dir / (file_obj["id"] + ".json")
                 with open_atomic(str(output_file)) as f:
-                    json.dump(file_obj, f)
+                    json.dump(file_obj, f, indent=JSON_INDENT)
 
     def update_status(self, x):
         self.status.update(x)
         with open_atomic(str(self.status_file)) as f:
-            json.dump(self.status, f)
+            json.dump(self.status, f, indent=JSON_INDENT)
 
     def iter_file_lists(self):
         """ Iterates over lists of files that need to be saved + downloaded """
@@ -875,7 +888,7 @@ class ArchiveFiles(object):
             self._deleted_count += 1
             file_obj["_wayslack_deleted"] = True
             with open_atomic(str(file_file)) as f:
-                json.dump(file_obj, f)
+                json.dump(file_obj, f, indent=JSON_INDENT)
 
         pool = Threadpool(delete_file, queue_size=1, thread_count=10)
         self._deleted_count = 0
