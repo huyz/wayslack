@@ -25,7 +25,7 @@ import json as std_json
 import yaml
 import pathlib
 import requests
-from requests.exceptions import HTTPError
+from requests.exceptions import HTTPError, ReadTimeout, ConnectionError
 from slacker import Slacker, Error
 
 def ts2datetime(ts):
@@ -59,17 +59,32 @@ def slack_retry(method, *args, **kwargs):
     while True:
         try:
             return method(*args, **kwargs)
-        except HTTPError as e:
-            if "Too Many Requests" not in str(e):
+        except (HTTPError, ConnectionError, ReadTimeout) as e:
+            if isinstance(e, ReadTimeout) or isinstance(e, ConnectionError):
+                if attempt > 3:
+                    raise
+                delay = 30
+            # As of 2020-08-16, it looks like Slack now temporarily hangs requests rather than returning an error,
+            #   probably because it's easier for users to handle this kind of throttling.
+            #   This change may have happened then: https://api.slack.com/changelog/2018-03-great-rate-limits
+            elif "Too Many Requests" in str(e):
+                delay = int(e.response.headers["Retry-After"])
+            else:
                 raise
             # Note: introduce backoff + random delay so concurrent requests don't spam
-            delay = int(int(e.response.headers["Retry-After"]) * (2 ** (attempt * (1 * random()))))
+            delay = int(delay * (2 ** (attempt * (1 * random()))))
             delay = max(delay, 30)
             if VERBOSE:
-                print "Slack reported Too Many Requests for %r (retrying in %s seconds)" %(
-                    method,
-                    delay,
-                )
+                if isinstance(e, ReadTimeout) or isinstance(e, ConnectionError):
+                    print "Slack request aborted or timed out for %r (retrying in %s seconds)" %(
+                        method,
+                        delay,
+                    )
+                elif "Too Many Requests" in str(e):
+                    print "Slack reported Too Many Requests for %r (retrying in %s seconds)" %(
+                        method,
+                        delay,
+                    )
             time.sleep(delay)
             attempt += 1
 
