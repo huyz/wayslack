@@ -289,7 +289,7 @@ def is_slack_url(url):
 def url_to_filename(url, _t_re=re.compile("\?t=[^&]*$")):
     if is_slack_url(url):
         url = _t_re.sub("", url)
-    url = urllib.quote(url, safe="")
+    url = urllib.quote(url.encode('utf8'), safe="")
     if len(url) > 190:
         url = url[:50] + "+" + sha256(url) + "+" + url[-50:]
     return url
