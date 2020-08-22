@@ -38,6 +38,23 @@ if DEBUG:
 else:
     JSON_INDENT = None
 
+NUM_RECENT_DAYS_TO_CHECK_FOR_UPDATED_REPLIES = 7
+ATTR_TO_PACKAGE = {
+    'channels': 'conversations',
+    'groups': 'conversations',
+    'im': 'conversations',
+    'mpim': 'conversations',
+    'users': 'users',
+    'files': 'files',
+    'emoji': 'emoji',
+}
+ATTR_TO_CONVO_TYPE = {
+    'channels': 'public_channel',
+    'groups': 'private_channel',
+    'im': 'im',
+    'mpim': 'mpim',
+}
+
 def ts2datetime(ts):
     return datetime.fromtimestamp(ts)
 
@@ -510,6 +527,26 @@ class ItemBase(object):
             "im:" + obj["user"]
         )
 
+    @property
+    def _is_bot_token(self):
+        return self._package.token.startswith("xoxb-")
+
+    @property
+    def is_convo_type(self):
+        return self.attr in ATTR_TO_CONVO_TYPE
+
+    @property
+    def _package(self):
+        return getattr(self.slack, ATTR_TO_PACKAGE[self.attr])
+
+    @staticmethod
+    def _is_trunk_message(msg):
+        return "thread_ts" not in msg or msg["thread_ts"] == msg["ts"]
+
+    @staticmethod
+    def _is_broadcast_message(msg):
+        return msg.get("subtype") == "thread_broadcast"
+
     def refresh(self):
         self._refresh_messages()
 
@@ -529,31 +566,37 @@ class ItemBase(object):
         with archive.open() as f:
             return json.load(f)
 
-    def _get_list(self, slack, latest_ts):
-        return slack_retry(slack.history,
+    def _get_list(self, method, latest_ts, **kwargs):
+        return slack_retry(method,
             channel=self.id,
             oldest=latest_ts,
-            count=1000,
+            limit=1000,  # Default is 100
+            **kwargs
         )
 
+    def _join_channel(self, slack):
+        print "=== Joining channel ", self.__dict__
+        return slack_retry(slack.join, channel=self.id)
+
+    def _leave_channel(self, slack):
+        print "=== Leaving channel ", self.__dict__
+        return slack_retry(slack.leave, channel=self.id)
+
     def _refresh_messages(self):
-        latest_archive = next(self.iter_archives(reverse=True), None)
-        latest_ts = 0
-        if latest_archive:
-            msgs = self.load_messages(latest_archive)
-            latest_ts = msgs[-1]["ts"] if msgs else 0
+        def get_last_saved_replies_ts():
+            # type: (...) -> Dict[str, str]
+            """
+            :returns: a dict mapping parent message's ts -> replies' last successfully saved ts.
+            """
+            last_saved_replies_ts = dict()
+            for archive in self.iter_archives(reverse=True):
+                for msg in sorted(self.load_messages(archive), key=lambda m: m["ts"], reverse=True):
+                    thread_ts = msg.get("thread_ts")
+                    if not self._is_trunk_message(msg) and thread_ts not in last_saved_replies_ts:
+                        last_saved_replies_ts[thread_ts] = msg["ts"]
+            return last_saved_replies_ts
 
-        slack = getattr(self.slack, self.attr)
-        while True:
-            resp = self._get_list(slack, latest_ts)
-            assert_successful(resp)
-
-            msgs = resp.body["messages"]
-            msgs.sort(key=lambda m: m["ts"])
-
-            if msgs and not self.path.exists():
-                self.path.mkdir()
-
+        def write_fresh_messages(type_str, msgs, latest_ts):
             for day, day_msgs in groupby(msgs, key=lambda m: ts2ymd(m["ts"])):
                 day_msgs = list(day_msgs)
                 day_archive = self.path / (day + ".json")
@@ -561,19 +604,111 @@ class ItemBase(object):
                     self.load_messages(day_archive)
                     if day_archive.exists() else []
                 )
-                cur.extend(day_msgs)
-                print "%s: %s new messages in %s (saving to %s)" %(
-                    self.pretty_name, len(day_msgs), self.pretty_name, day_archive,
-                )
+
+                # Track new and updated messages, and at the same time eliminate duplicates
+                # that may happen to be in the saved files, even though this shouldn't happen.
+                cur_msgs = {m["ts"] : m for m in cur}
+                new_count = updated_count = 0
+                fresh_msgs = []
                 for msg in day_msgs:
+                    if msg["ts"] in cur_msgs:
+                        if std_json.dumps(msg, sort_keys=True) == std_json.dumps(cur_msgs[msg["ts"]], sort_keys=True):
+                            continue
+                        updated_count += 1
+                    else:
+                        new_count += 1
+                    fresh_msgs.append(msg)
+                    cur_msgs[msg["ts"]] = msg
+                cur = [cur_msgs[k] for k in sorted(cur_msgs.keys())]
+
+                if new_count > 0:
+                    print "%s: %s new %s messages in %s (saving to %s)" %(
+                        self.pretty_name, new_count, type_str, self.pretty_name, day_archive,
+                    )
+                if updated_count > 0:
+                    print "%s: %s updated %s messages in %s (saving to %s)" %(
+                        self.pretty_name, updated_count, type_str, self.pretty_name, day_archive,
+                    )
+                for msg in fresh_msgs:
                     if "file" in msg or "files" in msg or "attachments" in msg:
                         self.downloader.add_message(msg)
                 with open_atomic(str(day_archive)) as f:
                     json.dump(cur, f, indent=JSON_INDENT)
-                if float(day_msgs[-1]["ts"]) > float(latest_ts):
+                if len(day_msgs) > 0 and float(day_msgs[-1]["ts"]) > float(latest_ts):
                     latest_ts = day_msgs[-1]["ts"]
-            if not resp.body["has_more"]:
+            return latest_ts
+
+        slack = self._package
+
+        # For public channels, bot user tokens need to auto-join or otherwise get `not_in_channel`.
+        #   For archived channels, this becomes even more complicated as the channel would have to
+        #   be unarchived before joining is possible.
+        # In contrast, personal oauth tokens don't need to be a member of the public channel to get
+        #   messages, even if the channel is archived.  For other reasons, including getting
+        #   conversations.replies, you should be using a bot *user* token anyway.
+        if self.attr == "channels" and self._is_bot_token and not self.is_member:
+            if self.is_archived:
+                print "%s: Skipping archived channel because of bot token (try a personal oauth token instead)" %(
+                    self.pretty_name
+                )
+                return
+            self._join_channel(slack)
+
+        last_saved_replies_ts = get_last_saved_replies_ts()
+        threads_to_fetch = []
+
+        # It's important to start at 1 and not 0.  If you put in 0, the Slack
+        # API will give the 1000 latest messages in the first page. But we want
+        # the oldest to paginate forward
+        latest_ts = 1
+        cursor = None
+        while True:
+            resp = self._get_list(slack.history, latest_ts, cursor=cursor)
+            assert_successful(resp)
+            cursor = resp.body.get("response_metadata", {}).get("next_cursor")
+
+            # Filter out the broadcast messages that we're already handling among thread replies.
+            # (It's important to let the fetch of replies handle these messages as we rely on the
+            # continuity to compute get_last_saved_replies_ts)
+            msgs = filter(lambda m: not self._is_broadcast_message(m), resp.body["messages"])
+            msgs.sort(key=lambda m: m["ts"])
+
+            for msg in msgs:
+                if msg["ts"] == msg.get("thread_ts"):
+                    if msg["thread_ts"] not in last_saved_replies_ts or \
+                            float(msg["latest_reply"]) > float(last_saved_replies_ts[msg["thread_ts"]]):
+                        threads_to_fetch.append(msg["ts"])
+
+            if msgs and not self.path.exists():
+                self.path.mkdir()
+
+            latest_ts = write_fresh_messages("trunk", msgs, latest_ts)
+            if not cursor and not resp.body["has_more"]:
                 break
+
+        for thread_ts in threads_to_fetch:
+            # It's important to start at 1 and not 0.  If you put in 0, the Slack
+            # API will give the 1000 latest messages in the first page. But we want
+            # the oldest to paginate forward
+            latest_ts = last_saved_replies_ts.get(thread_ts, 1)
+            cursor = None
+            while True:
+                resp = self._get_list(slack.replies, latest_ts, cursor=cursor, ts=thread_ts)
+                assert_successful(resp)
+                cursor = resp.body.get("response_metadata", {}).get("next_cursor")
+
+                # Filter out the parent messages that we've already added during the fetch of trunk messages.
+                # (The first message in a conversations.replies will always be the parent message,
+                # no matter what the `oldest` parameter.)
+                msgs = filter(lambda m: not self._is_trunk_message(m), resp.body["messages"])
+                msgs.sort(key=lambda m: m["ts"])
+
+                if msgs and not self.path.exists():
+                    self.path.mkdir()
+
+                latest_ts = write_fresh_messages("reply", msgs, latest_ts)
+                if not cursor and not resp.body["has_more"]:
+                    break
 
 
 class BaseArchiver(object):
@@ -597,14 +732,36 @@ class BaseArchiver(object):
 
     @property
     def attr(self):
-        return self.name if self.name != "ims" else "im"
+        return "im" if self.name == "ims" else "mpim" if self.name == "mpims" else self.name
+
+    @property
+    def convo_type(self):
+        return NAME_TO_CONVO_TYPE[self.name]
+
+    @property
+    def _package(self):
+        return getattr(self.slack, ATTR_TO_PACKAGE[self.attr])
+
+    @property
+    def is_convo_type(self):
+        return self.attr in ATTR_TO_CONVO_TYPE
+
+    @property
+    def _is_bot_token(self):
+        return self._package.token.startswith("xoxb-")
+
+    @property
+    def _list_args(self):
+        return {"types": ATTR_TO_CONVO_TYPE[self.attr]} \
+                if self.attr in ATTR_TO_CONVO_TYPE else dict()
 
     def update(self):
-        resp = getattr(self.slack, self.attr).list()
+        resp = self._package.list(**self._list_args)
         assert_successful(resp)
 
         resp_field = (
             "members" if self.name == "users" else
+            "channels" if self.is_convo_type else
             self.name
         )
         objs = resp.body[resp_field]
