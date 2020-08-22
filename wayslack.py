@@ -872,12 +872,82 @@ class ArchiveChannels(BaseArchiver):
 class ArchiveGroups(BaseArchiver):
     name = "groups"
 
+    def _fixup_symlinks(self):
+        for chan in self.get_list():
+            chan_name_dir = self.archive.path / to_str(chan.name)
+            if chan_name_dir.exists():
+                continue
+            if chan_name_dir.is_symlink():
+                chan_name_dir.unlink()
+            symlink_target = os.path.relpath(
+                str(chan.path),
+                str(chan_name_dir.parent),
+            )
+            chan_name_dir.symlink_to(symlink_target)
+
+        archive_channels = self.archive.path / "groups.json"
+        if not archive_channels.exists():
+            if archive_channels.is_symlink():
+                archive_channels.unlink()
+            archive_channels.symlink_to("_private/default/_groups/groups.json")
+
+    def refresh(self):
+        BaseArchiver.refresh(self)
+        self._fixup_symlinks()
+
+
 class ArchiveMPIMs(BaseArchiver):
     name = "mpims"
+
+    def _fixup_symlinks(self):
+        for chan in self.get_list():
+            chan_name_dir = self.archive.path / to_str(chan.name)
+            if chan_name_dir.exists():
+                continue
+            if chan_name_dir.is_symlink():
+                chan_name_dir.unlink()
+            symlink_target = os.path.relpath(
+                str(chan.path),
+                str(chan_name_dir.parent),
+            )
+            chan_name_dir.symlink_to(symlink_target)
+
+        archive_channels = self.archive.path / "mpims.json"
+        if not archive_channels.exists():
+            if archive_channels.is_symlink():
+                archive_channels.unlink()
+            archive_channels.symlink_to("_private/default/_mpims/mpims.json")
+
+    def refresh(self):
+        BaseArchiver.refresh(self)
+        self._fixup_symlinks()
 
 
 class ArchiveIMs(BaseArchiver):
     name = "ims"
+
+    def _fixup_symlinks(self):
+        for chan in self.get_list():
+            chan_name_dir = self.archive.path / to_str(chan.id)
+            if chan_name_dir.exists():
+                continue
+            if chan_name_dir.is_symlink():
+                chan_name_dir.unlink()
+            symlink_target = os.path.relpath(
+                str(chan.path),
+                str(chan_name_dir.parent),
+            )
+            chan_name_dir.symlink_to(symlink_target)
+
+        archive_channels = self.archive.path / "dms.json"
+        if not archive_channels.exists():
+            if archive_channels.is_symlink():
+                archive_channels.unlink()
+            archive_channels.symlink_to("_private/default/_ims/ims.json")
+
+    def refresh(self):
+        BaseArchiver.refresh(self)
+        self._fixup_symlinks()
 
 
 class ArchiveUsers(BaseArchiver):
