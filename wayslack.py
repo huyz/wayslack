@@ -64,7 +64,7 @@ def slack_retry(method, *args, **kwargs):
                 raise
             # Note: introduce backoff + random delay so concurrent requests don't spam
             delay = int(int(e.response.headers["Retry-After"]) * (2 ** (attempt * (1 * random()))))
-            delay = max(min, 30)
+            delay = max(delay, 30)
             if VERBOSE:
                 print "Slack reported Too Many Requests for %r (retrying in %s seconds)" %(
                     method,
