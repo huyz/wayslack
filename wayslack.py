@@ -1013,16 +1013,20 @@ class ArchiveFiles(object):
         oldest_file = None
         newest_file = self.status.get("newest_file")
 
+        # First, download files older than those we've already retrieved,
+        #   in particular, to resume a prior (interrupted) download session.
         # There's no way to list files in reverse order, so instead we need
-        # to start reading files backwards until we hit an empty list, which
-        # means we've hit the oldest file. After that, start reading forward.
+        #   to start reading files backwards until we hit an empty list, which
+        #   means we've hit the oldest file. After that, start reading forward.
         if not self.status.get("oldest_file"):
             print "Walking backwards to find oldest file (this may take a little while)..."
 
         while not self.status.get("oldest_file"):
-            resp = slack_retry(self.slack.files.list,
-                ts_to=self.status.get("ts_to_oldest") or 0,
-            )
+            kwargs = {"ts_to": self.status["ts_to_oldest"]} \
+                if self.status.get("ts_to_oldest") else {}
+            # TODO: we should be using cursor pagination, but slacker/slacker2
+            #   don't yet support these arguments
+            resp = slack_retry(self.slack.files.list, count=1000, **kwargs)
             assert_successful(resp)
             sorted_files = sorted(resp.body["files"], key=lambda f: f["created"])
             if not sorted_files or sorted_files[0] == oldest_file:
@@ -1044,13 +1048,15 @@ class ArchiveFiles(object):
                 "ts_from_newest": max(newest_file["created"], self.status.get("ts_from_newest", 0)),
             })
 
+        # Second, download files newer than those we've already retrieved,
+        #   since new files may have come in since last time.
         # Now start at the latest file we've seen before and walk forward!
         while True:
-            resp = (
-                slack_retry(self.slack.files.list) if not self.status.get("ts_from_newest") else
-                slack_retry(self.slack.files.list, ts_from=self.status["ts_from_newest"])
-            )
-
+            kwargs = {"ts_from": self.status["ts_from_newest"]} \
+                if self.status.get("ts_from_newest") else {}
+            # TODO: we should be using cursor pagination, but slacker/slacker2
+            #   don't yet support these arguments
+            resp = slack_retry(self.slack.files.list, count=1000, **kwargs)
             assert_successful(resp)
             sorted_files = sorted(resp.body["files"], key=lambda f: f["created"])
             if not sorted_files or sorted_files[-1] == newest_file:
