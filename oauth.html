@@ -9,7 +9,7 @@
             max-width: 100%;
         }
         #with-code {
-            /* display: none; */
+             display: none;
         }
         #without-code {
             display: none;
@@ -33,7 +33,7 @@
             }
 
             var codeElement = document.getElementById('input-code');
-            codeElement.value = 'wayslack --register ' + code;
+            codeElement.value = 'wayslack --register ' + (code || '');
             codeElement.focus();
             codeElement.select();
 
