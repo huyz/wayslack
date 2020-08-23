@@ -531,10 +531,6 @@ class ItemBase(object):
         return self._package.token.startswith("xoxb-")
 
     @property
-    def is_convo_type(self):
-        return self.attr in ATTR_TO_CONVO_TYPE
-
-    @property
     def _package(self):
         return getattr(self.slack, ATTR_TO_PACKAGE[self.attr])
 
@@ -734,20 +730,16 @@ class BaseArchiver(object):
         return "im" if self.name == "ims" else "mpim" if self.name == "mpims" else self.name
 
     @property
-    def convo_type(self):
-        return NAME_TO_CONVO_TYPE[self.name]
+    def _is_bot_token(self):
+        return self._package.token.startswith("xoxb-")
 
     @property
     def _package(self):
         return getattr(self.slack, ATTR_TO_PACKAGE[self.attr])
 
     @property
-    def is_convo_type(self):
+    def _is_convo_type(self):
         return self.attr in ATTR_TO_CONVO_TYPE
-
-    @property
-    def _is_bot_token(self):
-        return self._package.token.startswith("xoxb-")
 
     @property
     def _list_args(self):
@@ -760,7 +752,7 @@ class BaseArchiver(object):
 
         resp_field = (
             "members" if self.name == "users" else
-            "channels" if self.is_convo_type else
+            "channels" if self._is_convo_type else
             self.name
         )
         objs = resp.body[resp_field]
