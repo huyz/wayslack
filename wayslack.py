@@ -9,6 +9,7 @@ import urllib
 import atexit
 import hashlib
 import argparse
+import codecs
 from Queue import Queue
 from random import random
 from threading import Thread
@@ -268,6 +269,14 @@ class open_atomic(object):
     def __getattr__(self, attr):
         return getattr(self.file, attr)
 
+class open_atomic_unicode(open_atomic):
+    def __init__(self, name, **kwargs):
+        kwargs.update({
+            "opener": codecs.open,
+            "encoding": "utf-8",
+        })
+        super(open_atomic_unicode, self).__init__(name, **kwargs)
+
 def pluck(dict, keys):
     return [(k, dict[k]) for k in keys if k in dict]
 
@@ -372,8 +381,8 @@ class Downloader(object):
                     pass
                 return
 
-            with open_atomic(str(self.pending_file)) as f:
-                json.dump(to_write, f, indent=JSON_INDENT)
+            with open_atomic_unicode(str(self.pending_file)) as f:
+                json.dump(to_write, f, ensure_ascii=False, indent=JSON_INDENT)
 
     def join(self):
         self.pool.join()
@@ -622,8 +631,8 @@ class ItemBase(object):
                 for msg in fresh_msgs:
                     if "file" in msg or "files" in msg or "attachments" in msg:
                         self.downloader.add_message(msg)
-                with open_atomic(str(day_archive)) as f:
-                    json.dump(cur, f, indent=JSON_INDENT)
+                with open_atomic_unicode(str(day_archive)) as f:
+                    json.dump(cur, f, ensure_ascii=False, indent=JSON_INDENT)
                 if len(day_msgs) > 0 and float(day_msgs[-1]["ts"]) > float(latest_ts):
                     latest_ts = day_msgs[-1]["ts"]
             return latest_ts
@@ -1000,13 +1009,13 @@ class ArchiveFiles(object):
                 if not output_dir.exists():
                     output_dir.mkdir()
                 output_file = output_dir / (file_obj["id"] + ".json")
-                with open_atomic(str(output_file)) as f:
-                    json.dump(file_obj, f, indent=JSON_INDENT)
+                with open_atomic_unicode(str(output_file)) as f:
+                    json.dump(file_obj, f, ensure_ascii=False, indent=JSON_INDENT)
 
     def update_status(self, x):
         self.status.update(x)
-        with open_atomic(str(self.status_file)) as f:
-            json.dump(self.status, f, indent=JSON_INDENT)
+        with open_atomic_unicode(str(self.status_file)) as f:
+            json.dump(self.status, f, ensure_ascii=False, indent=JSON_INDENT)
 
     def iter_file_lists(self):
         """ Iterates over lists of files that need to be saved + downloaded """
@@ -1110,8 +1119,8 @@ class ArchiveFiles(object):
                 return
             self._deleted_count += 1
             file_obj["_wayslack_deleted"] = True
-            with open_atomic(str(file_file)) as f:
-                json.dump(file_obj, f, indent=JSON_INDENT)
+            with open_atomic_unicode(str(file_file)) as f:
+                json.dump(file_obj, f, ensure_ascii=False, indent=JSON_INDENT)
 
         pool = Threadpool(delete_file, queue_size=1, thread_count=10)
         self._deleted_count = 0
