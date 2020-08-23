@@ -28,17 +28,10 @@ import requests
 from requests.exceptions import HTTPError, ReadTimeout, ConnectionError
 from slacker import Slacker, Error
 
-# Turn on all sorts of logging and pretty-prints the output json
-DEBUG = True
+DEBUG = False
+VERBOSE = False
+JSON_INDENT = None
 
-if DEBUG:
-    JSON_INDENT = 4  # Default is None
-    import logging
-    logging.basicConfig(level=logging.DEBUG)
-else:
-    JSON_INDENT = None
-
-NUM_RECENT_DAYS_TO_CHECK_FOR_UPDATED_REPLIES = 7
 ATTR_TO_PACKAGE = {
     'channels': 'conversations',
     'groups': 'conversations',
@@ -103,20 +96,18 @@ def slack_retry(method, *args, **kwargs):
             delay = max(delay, 30)
             if VERBOSE:
                 if isinstance(e, ReadTimeout) or isinstance(e, ConnectionError):
-                    print "Slack request aborted or timed out for %r (retrying in %s seconds)" %(
+                    print "WARNING: Slack aborted or timed out request for %r (retrying in %s seconds)" %(
                         method,
                         delay,
                     )
                 elif "Too Many Requests" in str(e):
-                    print "Slack reported Too Many Requests for %r (retrying in %s seconds)" %(
+                    print "WARNING: Slack reported Too Many Requests for %r (retrying in %s seconds)" %(
                         method,
                         delay,
                     )
             time.sleep(delay)
             attempt += 1
 
-
-VERBOSE = DEBUG
 
 # Source: https://github.com/shazow/unstdlib.py/blob/master/unstdlib/standard/string_.py
 def to_str(obj, encoding='utf-8', **encode_args):
@@ -416,7 +407,7 @@ class Downloader(object):
                     timeout=60,
                 )
             except Exception as e:
-                print "Error:", e
+                print "ERROR:", e
                 with open_atomic(meta_file) as meta:
                     meta.write("999\nException: %r" %(e, ))
                 return
@@ -435,7 +426,7 @@ class Downloader(object):
                     f.write(chunk)
                 # XXX Slack generally sends an MD5 checksum in the Etag, but they seem to
                 #   occasionally version Etags which breaks the checksum somehow.
-                if is_slack_url(url):
+                if VERBOSE and is_slack_url(url):
                     etag = res.headers.get("etag")
                     if etag:
                         etag = etag.strip('"')
@@ -574,11 +565,11 @@ class ItemBase(object):
         )
 
     def _join_channel(self, slack):
-        print "=== Joining channel ", self.__dict__
+        print "Joining channel ", self.pretty_name
         return slack_retry(slack.join, channel=self.id)
 
     def _leave_channel(self, slack):
-        print "=== Leaving channel ", self.__dict__
+        print "Leaving channel ", self.pretty_name
         return slack_retry(slack.leave, channel=self.id)
 
     def _refresh_messages(self):
@@ -1108,7 +1099,7 @@ class ArchiveFiles(object):
                 res = slack_retry(self.slack.files.delete, file_obj["id"])
                 assert_successful(res)
             except Error as e:
-                print "Error deleting file %r: %s" %(file_obj["id"], e.message)
+                print "ERROR: deleting file %r: %s" %(file_obj["id"], e.message)
                 self._error_count += 1
                 return
             self._deleted_count += 1
@@ -1308,10 +1299,17 @@ def args_get_archives(args):
 
 
 def main(argv=None):
-    global VERBOSE
+    global VERBOSE, DEBUG, JSON_INDENT
     argv = sys.argv[1:] if argv is None else argv
     args = parser.parse_args(argv)
     VERBOSE = args.verbose
+    DEBUG = args.debug
+
+    if DEBUG:
+        VERBOSE = True
+        JSON_INDENT = 4  # Default is None
+        import logging
+        logging.basicConfig(level=logging.DEBUG)
 
     archives = list(args_get_archives(args))
     if not archives:
@@ -1354,6 +1352,7 @@ archives:
     token: xoxp-9876-wxyz
     # Do not download any files; only download conversation text.
     download_files: false
+    # Only download private conversations and files
     export_public_data: false
 """
 
@@ -1375,6 +1374,7 @@ $ cat ~/.wayslack/config.yaml
 %s
 """ %(example_config_file, ))
 parser.add_argument("--config", "-c", help="Configuration file. Default: ~/.wayslack/config.yaml")
+parser.add_argument("--debug", action="store_true")
 parser.add_argument("--verbose", "-v", action="store_true")
 parser.add_argument("--download-everything", "-d", default=False, action="store_true", help="""
     Re-scan all messages for files to download (by default only new files are
