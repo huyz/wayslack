@@ -28,10 +28,19 @@ import pathlib
 import requests
 from requests.exceptions import HTTPError, ReadTimeout, ConnectionError
 from slacker import Slacker, Error
+from slacker.utilities import get_api_url
 
 DEBUG = False
 VERBOSE = False
 JSON_INDENT = None
+
+# In support of the OAuth flow, these are parameters of the "Gimme Slack" app,
+# which has been configured with the Redirect URLs:
+# - https://huyz.github.io/wayslack/oauth
+#   (See GitHub Page https://github.com/huyz/wayslack/blob/gh-pages/oauth.html)
+# - http://not.a.realhost/
+CLIENT_ID = "2526404912.1280845319991"
+CLIENT_SECRET = "76c84535a544d8e70750725feffa6ffb"  # Not really a secret.
 
 ATTR_TO_PACKAGE = {
     'channels': 'conversations',
@@ -48,6 +57,25 @@ ATTR_TO_CONVO_TYPE = {
     'im': 'im',
     'mpim': 'mpim',
 }
+
+BOT_SCOPE = (
+    "app_mentions:read,calls:read,channels:history,channels:join,channels:read,dnd:read"
+    ",emoji:read,files:read,groups:history,groups:read,im:history,im:read,incoming-webhook"
+    ",links:read,mpim:history,mpim:read,pins:read,reactions:read,reminders:read"
+    ",remote_files:read,team:read,usergroups:read,users.profile:read,users:read"
+    ",users:read.email,files:write"
+)
+USER_SCOPE = (
+    "calls:read,channels:history,channels:read,dnd:read,emoji:read,files:read,groups:history"
+    ",groups:read,identify,im:history,im:read,links:read,mpim:history,mpim:read,pins:read"
+    ",reactions:read,reminders:read,remote_files:read,search:read,stars:read,team:read"
+    ",usergroups:read,users.profile:read,users:read,users:read.email,files:write"
+)
+REDIRECT_URI_GITHUB = "https://huyz.github.io/wayslack/oauth"
+REDIRECT_URI_PARANOID = "http://not.a.realhost/"
+
+def is_slack_url(url):
+    return ".slack.com/" in url or "slack-edge.com/" in url or "slack-files.com/" in url
 
 def ts2datetime(ts):
     return datetime.fromtimestamp(ts)
@@ -282,9 +310,6 @@ def pluck(dict, keys):
 
 def sha256(s):
     return hashlib.sha256(s).hexdigest()
-
-def is_slack_url(url):
-    return ".slack.com/" in url or "slack-edge.com/" in url or "slack-files.com/" in url
 
 def url_to_filename(url, _t_re=re.compile("\?t=[^&]*$")):
     if is_slack_url(url):
@@ -1143,7 +1168,7 @@ class ArchiveFiles(object):
         pool.join()
         print "Deleted files: %s%s" %(self._deleted_count, dry_run)
         if self._skipped_count and self._deleted_count:
-            print "Skipped files: %s (this is 'normal'. See: https://stackoverflow.com/q/44742164/71522; use --verbose for more info)" %(self._skipped_count, )
+            print "Skipped files: %s (this is 'normal'. See https://stackoverflow.com/q/44742164/71522; use --verbose for more info)" %(self._skipped_count, )
         if self._error_count:
             print "Errors: %s" %(self._error_count, )
 
@@ -1213,7 +1238,7 @@ class SlackArchive(object):
             self.mpims,
             self.ims,
         ]
-        if not opts.get("export_public_data", True):
+        if not opts.get("download_public_data", True):
             self.subtypes.remove(self.files)
             self.subtypes.remove(self.channels)
 
@@ -1297,13 +1322,145 @@ def args_get_archives(args):
             if not os.path.isdir(path):
                 print "Note: directory will be created: %s" %(path, )
             while not token:
-                token = raw_input("API token for %s (see: https://api.slack.com/custom-integrations/legacy-tokens): " %(path, ))
+                token = raw_input("API token for %s (See https://api.slack.com/authentication/token-types#user): " %(path, ))
             yield {
                 "token": token,
                 "dir": path,
                 "name": path,
             }
 
+# Based on https://github.com/wee-slack/wee-slack/blob/c561fb7de35175fa5db58aef3ce227ba3cf9eedb/wee_slack.py#L4260-L4314
+def register_app(args):
+    def request_secrets():
+        result = exchange_for_oauth_token()
+        return save_secrets(result) if result else 1
+
+    def exchange_for_oauth_token():
+        # TODO: use slacker/slacker2 once they support oauth.v2.access
+        resp = requests.post(get_api_url("oauth.v2.access"), {
+            "client_id": CLIENT_ID,
+            "client_secret": CLIENT_SECRET,
+            "redirect_uri": redirect_uri,
+            "code": code,
+        })
+        if not resp.ok:
+            print "ERROR: problem when trying to get Slack OAuth token. Got return code {}".format(
+                resp.status_code
+            )
+            print "  Check the network or proxy settings"
+            return
+        body = resp.json()
+        if not body["ok"]:
+            print "ERROR: Couldn't get Slack OAuth token: {}".format(body["error"])
+            return
+
+        workspace = body["team"]["name"]
+        token = body["authed_user"]["access_token"]
+        result = {
+            "workspace": workspace,
+            "token": token,
+        }
+        if "incoming_webhook" in body:
+            webhook_channel = body["incoming_webhook"].get("channel")
+            webhook_url = body["incoming_webhook"].get("url")
+            webhook_note = "Your webhook URL for channel {} is:\n{}".format(
+                webhook_channel,
+                webhook_url,
+            )
+            result.update({
+                "webhook_channel": webhook_channel,
+                "webhook_url": webhook_url,
+            })
+        else:
+            webhook_note = ""
+
+        print """
+### Successfully registered "Gimme Slack" into the "{}" workspace ###
+
+Your personal OAuth token is:
+{}
+{}
+""".format(workspace, token, webhook_note)
+        return result
+
+    def save_secrets(secrets):
+        output = """\
+    # Token for the "{0}" workspace
+    token: {1}\
+""".format(secrets["workspace"], secrets["token"])
+        if secrets.get("webhook_url"):
+            output += """
+    # Webhook URL for the "{0} {1}" channel
+    webhook_url: {2}\
+""".format(secrets["workspace"], secrets["webhook_channel"], secrets["webhook_url"])
+        output = DEFAULT_CONFIG_FILE.format(output)
+
+        default_config_file = os.path.expanduser("~/.wayslack/config.yaml")
+        fallback_default_config_file = os.path.expanduser("~/.wayslack/config.default.yaml")
+        config_file = (
+            args.config if args.config and not os.path.exists(args.config) else
+            default_config_file if not os.path.exists(default_config_file) else
+            fallback_default_config_file
+        )
+
+        if not os.path.exists(os.path.dirname(config_file)):
+            os.makedirs(os.path.dirname(config_file))
+        try:
+            with open_atomic(config_file) as f:
+                f.write(output)
+            print "Saved secrets in the config file {}".format(config_file)
+            return
+        except IOError, e:
+            print "ERROR: can't write the config file {}: {}".format(config_file, e)
+            return 1
+
+    paranoid = args.paranoid
+    redirect_uri = REDIRECT_URI_PARANOID if paranoid else REDIRECT_URI_GITHUB
+    redirect_uri_quoted = urllib.quote(redirect_uri, safe='')
+    code = args.archive
+
+    if code:
+        return request_secrets()
+
+    if paranoid:
+        paranoid_note = ""
+        last_step = ("""\
+You will see a message that the site can't be reached--this is expected.
+   The URL for the page will have a code in it of the form `?code=CODE`. Copy
+   the code after the equals sign (but excluding any `&state=`, if any),
+   return to your terminal and run `wayslack --register --paranoid CODE`.
+""")
+    else:
+        paranoid_note = ("""
+Note that by default GitHub Pages could theoretically grab the temporary code
+used to create your token (but not the long-lived token itself). If you're
+worried about this very low risk, you can use the --paranoid option, although
+the process would be a bit less user-friendly.\
+""")
+        last_step = ("""\
+The web page will show a command in the form `wayslack --register CODE`.
+   Run this command in your terminal.
+""")
+    print """
+### Registering the "Gimme Slack" app with your Slack workspace using OAuth ###
+{}
+
+1) Paste this link into a browser:
+
+   https://slack.com/oauth/v2/authorize?client_id={}&scope={}&user_scope={}&redirect_uri={}
+   
+2) In your browser, select the workspace you wish Wayslack to access. If you
+   want to register with multiple workspaces or multiple users in the same
+   workspace, you will have to repeat this whole process to get a new token
+   (and webhook URL) each time.
+3) Click "Authorize" in the browser.
+   If you get a message saying you are not authorized to install "Gimme Slack",
+   the workspace admins have restricted Slack app installation and you will
+   have to request permission from an admin.
+   To do that, go to https://my.slack.com/apps/A0188QV9DV5-gimme-slack and
+   click "Request to Install".
+4) {}
+""".format(paranoid_note, CLIENT_ID, BOT_SCOPE, USER_SCOPE, redirect_uri_quoted, last_step)
 
 def main(argv=None):
     global VERBOSE, DEBUG, JSON_INDENT
@@ -1317,6 +1474,9 @@ def main(argv=None):
         JSON_INDENT = 4  # Default is None
         import logging
         logging.basicConfig(level=logging.DEBUG)
+
+    if args.register:
+        return register_app(args)
 
     archives = list(args_get_archives(args))
     if not archives:
@@ -1343,24 +1503,45 @@ def main(argv=None):
         archive.delete_old_files(args.confirm_delete)
 
 
+DEFAULT_CONFIG_FILE = """\
+archives:
+  - dir: ~/wayslack-export  # path is relative to this file
+{}
+    # Delete files from Slack if they're more than 60 days old (useful for
+    #   free Slack channels which have a file limit).
+    # Files will only be deleted from Slack if:
+    #   - They exist in the archive (_files/storage/...)
+    #   - wayslack is run with --confirm-delete
+    # Otherwise a message will be printed but files will not be deleted.
+    #delete_old_files: 60 days
+    # Do not download any files; only download conversation text.
+    #download_files: false
+    # Only download private conversations and files
+    #download_public_data: false
+"""
+
 example_config_file = """---
 archives:
-  - dir: path/to/slack/first-export # path is relative to this file
-    # Get token from: https://api.slack.com/custom-integrations/legacy-tokens
+  - dir: path/to/public-export # path is relative to this file
+    # Get token (and webhook URL) by either:
+    #   a) running `wayslack --register`
+    #   b) creating an app and installing it to your workspace at https://api.slack.com/apps
     token: xoxp-1234-abcd
+    #webhook_url: https://hooks.slack.com/services/...
     # Delete files from Slack if they're more than 60 days old (useful for
-    # free Slack channels which have a file limit).
+    #   free Slack channels which have a file limit).
     # Files will only be deleted from Slack if:
-    # - They exist in the archive (_files/storage/...)
-    # - wayslack is run with --confirm-delete
+    #   - They exist in the archive (_files/storage/...)
+    #   - wayslack is run with --confirm-delete
     # Otherwise a message will be printed but files will not be deleted.
     delete_old_files: 60 days
-  - dir: second-export
+  - dir: private-export
     token: xoxp-9876-wxyz
+    #webhook_url: https://hooks.slack.com/services/...
     # Do not download any files; only download conversation text.
     download_files: false
     # Only download private conversations and files
-    export_public_data: false
+    download_public_data: false
 """
 
 parser = argparse.ArgumentParser(formatter_class=argparse.RawTextHelpFormatter, description="""
@@ -1369,11 +1550,32 @@ format.
 
 To get started:
 
-1. (optional) Export your team history: https://get.slack.help/hc/en-us/articles/201658943-Export-your-team-s-Slack-history
+1. (optional) Export your team history:
+   https://slack.com/help/articles/201658943-Export-your-workspace-data
 
-2. Get a legacy token from: https://api.slack.com/custom-integrations/legacy-tokens
+2. Either,
 
-3. Run `wayslack path/to/export/directory`
+    a) Run `wayslack --register` to go through an automated workflow
+
+        1) This automatically creates a default `~/.wayslack/config.yaml` file
+           with your "OAuth Access Token" and "Webhook URL"
+        2) Customize `~/.wayslack/config.yaml` (See below).
+
+    or
+
+    b) Get a token by creating an app: https://api.slack.com/apps
+
+        1) (optional) Bot token scopes: give the `incoming-webhook` if you want
+           to receive a notification for completed operations
+        2) User token scopes: give the app all the `*:read`, `*:history`,
+           `identify` scopes
+        3) (optional) User token scopes: give the `files:write` scope if you
+           want wayslack to be able to delete old files
+        4) Retrieve the "OAuth Access Token" on the "OAuth & Permissions" page.
+           Don't confuse that with the (limited) "Bot User OAuth Access Token".
+        5) (optional) Retrieve the "Webhook URL" on the "Incoming Webhooks" page
+
+3. Run `wayslack path/to/export/directory` and enter the token when prompted
 
 Optionally, create a configuration file:
 
@@ -1381,7 +1583,11 @@ $ cat ~/.wayslack/config.yaml
 %s
 """ %(example_config_file, ))
 parser.add_argument("--config", "-c", help="Configuration file. Default: ~/.wayslack/config.yaml")
-parser.add_argument("--debug", action="store_true")
+parser.add_argument("--debug", action="store_true", help="""
+    Turn on noisy debugging logs, especially network calls, and pretty-print
+    the JSON files that are exported.
+    This automatically sets the verbose flag.
+""")
 parser.add_argument("--verbose", "-v", action="store_true")
 parser.add_argument("--download-everything", "-d", default=False, action="store_true", help="""
     Re-scan all messages for files to download (by default only new files are
@@ -1392,11 +1598,22 @@ parser.add_argument("--confirm-delete", "-D", default=False, action="store_true"
     Confirm that Wayslack should delete old files from slack (see the
     delete_old_files configuration option).
 """)
+parser.add_argument("--register", action="store_true", help="""
+    Go through an OAuth workflow to register the app with your workspace and
+    obtain a token so that Wayslack can have the read permissions of your user
+    and the write permissions to send notifications.
+""")
+parser.add_argument("--paranoid", action="store_true", help="""
+    When you do --register, GitHub Pages will see a temporary code used to
+    create your token (but not the token itself). If you're worried about this,
+    you can use the --paranoid option, though the process will be a bit less
+    user-friendly.
+""")
 parser.add_argument("archive", nargs="*", default=[], help="""
     Path to a Slack export directory. A token can be provided by prefixing
     the path with the token: "token:path" (for example,
-    "xoxp-1234-abcd:~/Downloads/foo"). Get a token from
-    https://api.slack.com/custom-integrations/legacy-tokens.
+    "xoxp-1234-abcd:~/Downloads/foo"). Get a token by creating an
+    app and installing it to your workspace at https://api.slack.com/apps .
 """)
 
 if __name__ == "__main__":

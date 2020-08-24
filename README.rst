@@ -11,19 +11,40 @@ for users on the free tier. See the ``delete_old_files`` option.
 Getting Started
 ===============
 
-1. Install ``wayslack``::
+1. Install ``wayslack2``::
 
-    $ pip install wayslack
+    $ pip install wayslack2
 
-2. (optional) Export your team history and unzip it: https://get.slack.help/hc/en-us/articles/201658943-Export-your-team-s-Slack-history
+2. (optional) Export your team history and unzip it:
+   https://slack.com/help/articles/201658943-Export-your-workspace-data
 
-3. Get a legacy token from: https://api.slack.com/custom-integrations/legacy-tokens
+3. Either,
+
+    a) Run `wayslack --register` to go through an automated workflow
+
+        1) This automatically creates a default `~/.wayslack/config.yaml` file
+           with your "OAuth Access Token" and "Webhook URL"
+        2) Customize `~/.wayslack/config.yaml` (See below).
+
+    or
+
+    b) Get a token by creating an app: https://api.slack.com/apps
+
+        1) (optional) Bot token scopes: give the `incoming-webhook` if you want
+           to receive a notification for completed operations
+        2) User token scopes: give the app all the `*:read`, `*:history`,
+           `identify` scopes
+        3) (optional) User token scopes: give the `files:write` scope if you
+           want wayslack to be able to delete old files
+        4) Retrieve the "OAuth Access Token" on the "OAuth & Permissions" page.
+           Don't confuse that with the (limited) "Bot User OAuth Access Token".
+        5) (optional) Retrieve the "Webhook URL" on the "Incoming Webhooks" page
 
 4. Run ``wayslack path/to/export/directory`` to create an archive if one
    doesn't already exist, then download all messages and files::
 
     $ wayslack my-export/
-    API token for my-export/ (see https://api.slack.com/custom-integrations/legacy-tokens): xoxp-1234-abcd
+    API token for my-export/ (See https://api.slack.com/authentication/token-types#user): xoxp-1234-abcd
     Processing: my-export/
     Downloading https://.../image.jpg
     #general: 10 new messages in #general (saving to my-export/_channel-C049V24HY/2016-12-19.json)
@@ -36,17 +57,19 @@ Getting Started
     $ cat ~/.wayslack/config.yaml
     ---
     archives:
-      - dir: path/to/slack/first-export # path is relative to this file
-        # Get token from: https://api.slack.com/custom-integrations/legacy-tokens
+      - dir: path/to/public-export # path is relative to this file
+        # Get token by either:
+        #   a) running `wayslack --register`
+        #   b) creating an app and installing it to your workspace at https://api.slack.com/apps
         token: xoxp-1234-abcd
         # Delete files from Slack if they're more than 60 days old (useful for
-        # free Slack channels which have a file limit).
+        #   free Slack channels which have a file limit).
         # Files will only be deleted from Slack if:
-        # - They exist in the archive (_files/storage/...)
-        # - wayslack is run with --confirm-delete
+        #   - They exist in the archive (_files/storage/...)
+        #   - wayslack is run with --confirm-delete
         # Otherwise a message will be printed but files will not be deleted.
         delete_old_files: 60 days
-      - dir: second-export
+      - dir: private-export
         token: xoxp-9876-wxyz
         # Do not download any files; only download conversation text.
         download_files: false
@@ -54,9 +77,9 @@ Getting Started
         export_public_data: false
 
     $ wayslack
-    Processing: first-export
+    Processing: path/to/public-export
     ...
-    Processing: second-export
+    Processing: private-export
     ...
 
 Deleting Old Files from Slack
@@ -75,9 +98,9 @@ local size does not match the remote size, a few warnings will almost always be
 generated when deleting files (and, obviously, those files won't be deleted).
 
 **Note 2**: Slack appears to compress JPEGs, so this check is not applied to
-JPEGs. For all downloaded files, though, the etag is used to verify that the
-download was not corrupt (even if it isn't identical to the file originally
-uploaded).
+JPEGs. For all downloaded Slack files, though, the etag is used to verify that
+the download was not corrupted (even if it isn't identical to the file
+originally uploaded).
 
 For example::
 
