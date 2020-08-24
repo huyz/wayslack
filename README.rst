@@ -1,3 +1,5 @@
+**NOTE**: ``wayslack2`` is an updated version of ``wayslack``.
+
 The Wayslack Machine
 ====================
 

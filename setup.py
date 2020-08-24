@@ -10,16 +10,17 @@ os.chdir(os.path.dirname(sys.argv[0]) or ".")
 try:
     long_description = open("README.rst", "U").read()
 except IOError:
-    long_description = "See https://github.com/wolever/wayslack"
+    long_description = "See https://github.com/huyz/wayslack"
 
 setup(
-    name="wayslack",
-    version="0.3.1",
-    url="https://github.com/wolever/wayslack",
-    author="David Wolever",
-    author_email="david@wolever.net",
+    name="wayslack2",
+    version="0.4.0",
+    url="https://github.com/huyz/wayslack",
+    author="Huy Z",
+    author_email="h-pypi-pub@huyz.us",
     description="The Wayslack Machine: incrementally archive Slack messages and files using Slack's team export format",
     long_description=long_description,
+    long_description_content_type="text/x-rst",
     py_modules=["wayslack"],
     entry_points={
         'console_scripts': [
