@@ -10,6 +10,7 @@ import atexit
 import hashlib
 import argparse
 import codecs
+import stat
 from Queue import Queue
 from random import random
 from threading import Thread
@@ -1218,6 +1219,13 @@ class SlackArchive(object):
         self.dir = opts["dir"]
         self.download_files = opts.get("download_files", True)
         self.slack = slack
+        # For privacy, the top-level directory should be accessible by only the
+        # system user. But if the directory already exists, we assume the user
+        # has already set the mode as they like it.
+        if not os.path.exists(self.dir):
+            os.mkdir(self.dir)
+            mode = stat.S_IMODE(os.stat(self.dir).st_mode)
+            os.chmod(self.dir, mode & ~stat.S_IRWXG & ~stat.S_IRWXO)
         self.path = pathlib.Path(self.dir)
         self.emoji = ArchiveEmoji(self, self.path / "_emoji")
         self.files = ArchiveFiles(self, self.path / "_files")

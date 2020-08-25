@@ -14,7 +14,7 @@ except IOError:
 
 setup(
     name="wayslack2",
-    version="0.4.0",
+    version="0.4.1",
     url="https://github.com/huyz/wayslack",
     author="Huy Z",
     author_email="h-pypi-pub@huyz.us",
