@@ -22,25 +22,23 @@ Getting Started
 
 3. Either,
 
-    a) Run `wayslack --register` to go through an automated workflow
+   #) Run `wayslack --register` to go through an automated workflow
 
-        1) This automatically creates a default `~/.wayslack/config.yaml` file
-           with your "OAuth Access Token" and "Webhook URL"
-        2) Customize `~/.wayslack/config.yaml` (See below).
+      #) This automatically creates a default `~/.wayslack/config.yaml` file
+         with your "OAuth Access Token" and "Webhook URL"
+      #) Customize `~/.wayslack/config.yaml` (See below).
 
-    or
+   #) Get a token by creating an app: https://api.slack.com/apps
 
-    b) Get a token by creating an app: https://api.slack.com/apps
-
-        1) (optional) Bot token scopes: give the `incoming-webhook` if you want
-           to receive a notification for completed operations
-        2) User token scopes: give the app all the `*:read`, `*:history`,
-           `identify` scopes
-        3) (optional) User token scopes: give the `files:write` scope if you
-           want wayslack to be able to delete old files
-        4) Retrieve the "OAuth Access Token" on the "OAuth & Permissions" page.
-           Don't confuse that with the (limited) "Bot User OAuth Access Token".
-        5) (optional) Retrieve the "Webhook URL" on the "Incoming Webhooks" page
+      #) (optional) Bot token scopes: give the `incoming-webhook` if you want
+         to receive a notification for completed operations
+      #) User token scopes: give the app all the `*:read`, `*:history`,
+         `identify` scopes
+      #) (optional) User token scopes: give the `files:write` scope if you
+         want wayslack to be able to delete old files
+      #) Retrieve the "OAuth Access Token" on the "OAuth & Permissions" page.
+         Don't confuse that with the (limited) "Bot User OAuth Access Token".
+      #) (optional) Retrieve the "Webhook URL" on the "Incoming Webhooks" page
 
 4. Run ``wayslack path/to/export/directory`` to create an archive if one
    doesn't already exist, then download all messages and files::
