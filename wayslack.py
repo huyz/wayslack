@@ -33,7 +33,7 @@ from slacker.utilities import get_api_url
 
 DEBUG = False
 VERBOSE = False
-JSON_INDENT = None
+JSON_INDENT = 4
 
 # In support of the OAuth flow, these are parameters of the "Gimme Slack" app,
 # which has been configured with the Redirect URLs:
@@ -77,6 +77,10 @@ REDIRECT_URI_PARANOID = "http://not.a.realhost/"
 
 def is_slack_url(url):
     return ".slack.com/" in url or "slack-edge.com/" in url or "slack-files.com/" in url
+
+def json_dump(obj, fp):
+    # Indentation and sorting keys is friendlier for git diffs
+    json.dump(obj, fp, ensure_ascii=False, indent=JSON_INDENT, sort_keys=True)
 
 def ts2datetime(ts):
     return datetime.fromtimestamp(ts)
@@ -408,7 +412,7 @@ class Downloader(object):
                 return
 
             with open_atomic_unicode(str(self.pending_file)) as f:
-                json.dump(to_write, f, ensure_ascii=False, indent=JSON_INDENT)
+                json_dump(to_write, f)
 
     def join(self):
         self.pool.join()
@@ -654,7 +658,7 @@ class ItemBase(object):
                     if "file" in msg or "files" in msg or "attachments" in msg:
                         self.downloader.add_message(msg)
                 with open_atomic_unicode(str(day_archive)) as f:
-                    json.dump(cur, f, ensure_ascii=False, indent=JSON_INDENT)
+                    json_dump(cur, f)
                 if len(day_msgs) > 0 and float(day_msgs[-1]["ts"]) > float(latest_ts):
                     latest_ts = day_msgs[-1]["ts"]
             return latest_ts
@@ -1028,12 +1032,12 @@ class ArchiveFiles(object):
                     output_dir.mkdir()
                 output_file = output_dir / (file_obj["id"] + ".json")
                 with open_atomic_unicode(str(output_file)) as f:
-                    json.dump(file_obj, f, ensure_ascii=False, indent=JSON_INDENT)
+                    json_dump(file_obj, f)
 
     def update_status(self, x):
         self.status.update(x)
         with open_atomic_unicode(str(self.status_file)) as f:
-            json.dump(self.status, f, ensure_ascii=False, indent=JSON_INDENT)
+            json_dump(self.status, f)
 
     def iter_file_lists(self):
         """ Iterates over lists of files that need to be saved + downloaded """
@@ -1138,7 +1142,7 @@ class ArchiveFiles(object):
             self._deleted_count += 1
             file_obj["_wayslack_deleted"] = True
             with open_atomic_unicode(str(file_file)) as f:
-                json.dump(file_obj, f, ensure_ascii=False, indent=JSON_INDENT)
+                json_dump(file_obj, f)
 
         pool = Threadpool(delete_file, queue_size=1, thread_count=10)
         self._deleted_count = 0
@@ -1479,7 +1483,6 @@ def main(argv=None):
 
     if DEBUG:
         VERBOSE = True
-        JSON_INDENT = 4  # Default is None
         import logging
         logging.basicConfig(level=logging.DEBUG)
 
