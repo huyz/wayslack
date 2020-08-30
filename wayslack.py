@@ -302,13 +302,13 @@ class open_atomic(object):
     def __getattr__(self, attr):
         return getattr(self.file, attr)
 
-class open_atomic_unicode(open_atomic):
+class open_atomic_utf8(open_atomic):
     def __init__(self, name, **kwargs):
         kwargs.update({
             "opener": codecs.open,
             "encoding": "utf-8",
         })
-        super(open_atomic_unicode, self).__init__(name, **kwargs)
+        super(open_atomic_utf8, self).__init__(name, **kwargs)
 
 def pluck(dict, keys):
     return [(k, dict[k]) for k in keys if k in dict]
@@ -411,7 +411,7 @@ class Downloader(object):
                     pass
                 return
 
-            with open_atomic_unicode(str(self.pending_file)) as f:
+            with open_atomic(str(self.pending_file)) as f:
                 json_dump(to_write, f)
 
     def join(self):
@@ -588,7 +588,7 @@ class ItemBase(object):
             yield f
 
     def load_messages(self, archive):
-        with archive.open() as f:
+        with archive.open(encoding="utf-8") as f:
             return json.load(f)
 
     def _get_list(self, method, latest_ts, **kwargs):
@@ -657,7 +657,7 @@ class ItemBase(object):
                 for msg in fresh_msgs:
                     if "file" in msg or "files" in msg or "attachments" in msg:
                         self.downloader.add_message(msg)
-                with open_atomic_unicode(str(day_archive)) as f:
+                with open_atomic_utf8(str(day_archive)) as f:
                     json_dump(cur, f)
                 if len(day_msgs) > 0 and float(day_msgs[-1]["ts"]) > float(latest_ts):
                     latest_ts = day_msgs[-1]["ts"]
@@ -749,7 +749,7 @@ class BaseArchiver(object):
     def get_list(self):
         if not self.json_file.exists():
             return []
-        with self.json_file.open() as f:
+        with self.json_file.open(encoding="utf-8") as f:
             return [
                 self.item_class(self.attr, self.slack, self.archive.downloader, self.path / o["id"], o)
                 for o in json.load(f)
@@ -789,7 +789,7 @@ class BaseArchiver(object):
         objs_json = std_json.dumps(objs, sort_keys=True)
 
         try:
-            old_objs_json = self.json_file.open().read()
+            old_objs_json = self.json_file.open(encoding="utf-8").read()
         except IOError:
             old_objs_json = None
         if objs_json == old_objs_json:
@@ -808,7 +808,7 @@ class BaseArchiver(object):
                 str(archive_path / ("%s-%s.json" %(self.name, ts))),
             )
 
-        with open_atomic(str(self.json_file)) as f:
+        with open_atomic_utf8(str(self.json_file)) as f:
             f.write(unicode(objs_json))
 
     def upgrade(self):
@@ -1031,12 +1031,12 @@ class ArchiveFiles(object):
                 if not output_dir.exists():
                     output_dir.mkdir()
                 output_file = output_dir / (file_obj["id"] + ".json")
-                with open_atomic_unicode(str(output_file)) as f:
+                with open_atomic_utf8(str(output_file)) as f:
                     json_dump(file_obj, f)
 
     def update_status(self, x):
         self.status.update(x)
-        with open_atomic_unicode(str(self.status_file)) as f:
+        with open_atomic(str(self.status_file)) as f:
             json_dump(self.status, f)
 
     def iter_file_lists(self):
@@ -1114,7 +1114,7 @@ class ArchiveFiles(object):
 
     def _iter_files_in_dir(self, dir):
         for file_file in dir.glob("*.json"):
-            with file_file.open() as f:
+            with file_file.open(encoding="utf-8") as f:
                 yield file_file, json.load(f)
 
     def download_all_files(self):
@@ -1141,7 +1141,7 @@ class ArchiveFiles(object):
                 return
             self._deleted_count += 1
             file_obj["_wayslack_deleted"] = True
-            with open_atomic_unicode(str(file_file)) as f:
+            with open_atomic_utf8(str(file_file)) as f:
                 json_dump(file_obj, f)
 
         pool = Threadpool(delete_file, queue_size=1, thread_count=10)
@@ -1210,7 +1210,7 @@ class ArchiveEmoji(BaseArchiver):
     def get_list(self):
         if not self.json_file.exists():
             return []
-        with self.json_file.open() as f:
+        with self.json_file.open(encoding="utf-8") as f:
             return [
                 EmojiItem(self.slack, self.archive.downloader, k, v)
                 for (k, v) in json.load(f).iteritems()
@@ -1311,7 +1311,7 @@ def args_get_archives(args):
         None
     )
     if config_file:
-        config = yaml.load(open(config_file))
+        config = yaml.load(codecs.open(config_file, encoding="utf-8"))
         for archive in config["archives"]:
             archive.setdefault("name", archive["dir"])
             archive["dir"] = os.path.expanduser(archive["dir"])
@@ -1418,7 +1418,7 @@ Your personal OAuth token is:
         if not os.path.exists(os.path.dirname(config_file)):
             os.makedirs(os.path.dirname(config_file))
         try:
-            with open_atomic(config_file) as f:
+            with open_atomic_utf8(config_file) as f:
                 f.write(output)
             print "Saved secrets in the config file {}".format(config_file)
             return
