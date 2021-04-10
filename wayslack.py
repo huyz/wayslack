@@ -773,7 +773,7 @@ class BaseArchiver(object):
 
     @property
     def _list_args(self):
-        return {"types": ATTR_TO_CONVO_TYPE[self.attr]} \
+        return {"types": ATTR_TO_CONVO_TYPE[self.attr], "limit": 1000} \
                 if self.attr in ATTR_TO_CONVO_TYPE else dict()
 
     def update(self):
