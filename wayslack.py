@@ -773,7 +773,7 @@ class BaseArchiver(object):
 
     @property
     def _list_args(self):
-        return {"types": ATTR_TO_CONVO_TYPE[self.attr]} \
+        return {"types": ATTR_TO_CONVO_TYPE[self.attr], "limit": 1000} \
                 if self.attr in ATTR_TO_CONVO_TYPE else dict()
 
     def update(self):
@@ -1036,7 +1036,7 @@ class ArchiveFiles(object):
 
     def update_status(self, x):
         self.status.update(x)
-        with open_atomic(str(self.status_file)) as f:
+        with open_atomic_utf8(str(self.status_file)) as f:
             json_dump(self.status, f)
 
     def iter_file_lists(self):
