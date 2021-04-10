@@ -1036,7 +1036,7 @@ class ArchiveFiles(object):
 
     def update_status(self, x):
         self.status.update(x)
-        with open_atomic(str(self.status_file)) as f:
+        with open_atomic_utf8(str(self.status_file)) as f:
             json_dump(self.status, f)
 
     def iter_file_lists(self):
